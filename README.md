@@ -18,3 +18,12 @@ compile_games - this takes in a vector of game ids and returns a dataframe of al
 
 schedule_scrape - given a season and optional team vector returns all game ids for the field
 
+nwhl_gameids####.csv
+--------------------
+
+These are csv files with the gameids for each game of the season in the year named in file
+
+nwhl_pbp_1718.csv
+-----------------
+
+If unable to run scraper and/or don't want to, this file has all of the 1718 season pbp data loaded.
