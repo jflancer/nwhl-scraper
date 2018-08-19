@@ -425,6 +425,10 @@ game_summary <- function(pbp_df){
   # Pass in play by play dataframe for individual game and returns player summaries for game
   # Thanks to @EvolvingWild for providing their NHL game summary as a baseline 
   game_id <- first(pbp_df$game_id)
+  date <- first(pbp_df$game_date)
+  home <- first(pbp_df$home_team)
+  away <- first(pbp_df$away_team)
+  
   print(game_id)
   team_ids <- select(team_info(game_id = game_id), 
                      roster_id, 
@@ -456,14 +460,17 @@ game_summary <- function(pbp_df){
     summarise(A1 = sum(event_type == "Goal"),
               SV = sum(event_type == "Shot"),
               FOL = sum(event_type == "Faceoff"),
-              PPA = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
-              SHA = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
+              PPA1 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
+              SHA1 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
     ) %>%
     rename(Player = event_player_2)
   
   pbp_player_3 <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_player_3, event_team) %>%
-    summarise(A2 = sum(event_type == "Goal")) %>%
+    summarise(A2 = sum(event_type == "Goal"),
+              PPA2 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
+              SHA2 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
+    ) %>%
     rename(Player = event_player_3)
   
   pbp_h_goalie <- pbp_df %>%
@@ -503,7 +510,7 @@ game_summary <- function(pbp_df){
   } else {
     pbp_minus <- data.frame(Player = NA_character_, Minus = NA_integer_)
   }
-  mergecols <- c(colnames(pbp_player_1)[1:6])
+
   player_data <- roster %>%
     full_join(pbp_player_1, by = "Player", suffix = c("",".")) %>%
     full_join(pbp_player_2, by = "Player", suffix = c("",".")) %>%
@@ -516,22 +523,32 @@ game_summary <- function(pbp_df){
     rename(Team = abbrev) %>%
     select(-contains("."), -event_team, -roster_id) %>%
     filter(!is.na(Player))
+  
+  player_data <- player_data[which(apply(player_data[,c(4:27)], 1, function(x){sum(is.na(x))}) != 23),]
+  
+  player_data <- player_data %>%
+    group_by(position, Player, Team) %>%
+    summarise_if(is.numeric, sum, na.rm = T)
     
-  player_data <- player_data[!apply(player_data[,4:25], 1, function(x){sum(is.na(x)) == 22}),]
-  player_data$game_id <- first(player_data$game_id)
-  player_data$game_date <- first(player_data$game_date)
-  player_data$home_team <- first(player_data$home_team)
-  player_data$away_team <- first(player_data$away_team)
+  player_data$game_id <- game_id
+  player_data$game_date <- date
+  player_data$home_team <- home
+  player_data$away_team <- away
   
   player_data[is.na(player_data)] <- 0
   
-  player_data <- mutate(player_data, GS = ifelse(position == "G",
+  player_data <- mutate(player_data, 
+                        GS = ifelse(position == "G",
                                             0.14*SV - GA,
-                                            G + 0.64*(A1+A2) + 0.11*SOG + 0.12*(FOW-FOL) - 0.17*(PIM/2)))
+                                            G + 0.64*(A1+A2) + 0.11*SOG + 0.12*(FOW-FOL) - 0.17*(PIM/2)),
+                        PTS = G+A1+A2,
+                        PrPTS = G+A1,
+                        GF. = ifelse((Plus+Minus) != 0 ,Plus/(Plus+Minus),NA_integer_)) %>%
+    rename(eGF = Plus, eGA = Minus)
   
   player_data <- select(player_data,
                         game_id:away_team,Player,position,Team,
-                        G,A1,A2,GS,SOG,Plus,Minus,PPG,PPA,SHG,SHA,FOW,FOL,PIM,Blk,TO,SV,GA)
+                        G,A1,A2,PTS,PrPTS,GS,SOG,eGF,eGA,GF.,PPG,PPA1,PPA2,SHG,SHA1,SHA2,FOW,FOL,PIM,Blk,TO,SV,GA)
   
   return(player_data)
 }
@@ -539,8 +556,10 @@ game_summary <- function(pbp_df){
 #Compile game summaries into one data frame from larger pbp file
 compile_player_summary <- function(pbp_df){
   player_games <- pbp_df %>%
+    ungroup() %>%
+    mutate(game_id = as.character(game_id)) %>%
     group_by(game_id) %>%
-    do(game_summary(.))
+    do(data.frame(game_summary(.)))
   return(player_games)
 }
 
@@ -551,10 +570,12 @@ compile_player_summary <- function(pbp_df){
 pbp_ids <- schedule_scrape(Season = "20172018")
 
 #Individual Games
-pbp_df <- complete_game_scrape(pbp_ids[1])
+pbp_df <- complete_game_scrape(pbp_ids[2])
 pbp_gamesummary <- game_summary(pbp_df)
 
 #Multiple games
 pbp_full <- compile_games(pbp_ids)
 #This takes about 45s-1min to run
 pbp_full_summary <- compile_player_summary(pbp_full)
+write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1718.csv")
+write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1718.csv")
