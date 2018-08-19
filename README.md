@@ -18,6 +18,10 @@ complete_game_scrape - this is the main game scrape function. Given a game id th
 
 compile_games - this takes in a vector of game ids and returns a dataframe of all play by play files merged together
 
+game_summary - reads in single game pbp file and returns player totals for the game
+
+compile_player_summary - reads in multiple games and compiles into single dataframe
+
 schedule_scrape - given a season and optional team vector returns all game ids for the field
 
 nwhl_gameids####.csv
