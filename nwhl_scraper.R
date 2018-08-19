@@ -435,11 +435,12 @@ game_summary <- function(pbp_df){
                      abbrev)
   
   roster <- roster_info(game_id = game_id) %>%
-    filter(roster_type == "player" & status == "active") %>%
+    filter(roster_type == "player") %>%
     select(first_name, last_name, position, roster_id) %>%
     mutate(Player = paste(first_name,last_name)) %>%
     select(-first_name, -last_name) %>%
-    left_join(team_ids, by = c("roster_id"))
+    left_join(team_ids, by = c("roster_id")) %>%
+    select(-roster_id)
   
   pbp_player_1 <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_player_1, event_team) %>%
@@ -511,20 +512,19 @@ game_summary <- function(pbp_df){
     pbp_minus <- data.frame(Player = NA_character_, Minus = NA_integer_)
   }
 
-  player_data <- roster %>%
-    full_join(pbp_player_1, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_player_2, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_player_3, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_h_goalie, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_a_goalie, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_plus, by = "Player", suffix = c("",".")) %>%
-    full_join(pbp_minus, by = "Player", suffix = c("",".")) %>%
-    mutate(GA = ifelse(!is.na(GA),GA,0) + ifelse(!is.na(GA.),GA.,0)) %>%
+  player_data <- pbp_player_1 %>%
+    bind_rows(pbp_player_2) %>%
+    bind_rows(pbp_player_3) %>%
+    bind_rows(pbp_h_goalie) %>%
+    bind_rows(pbp_a_goalie) %>%
+    bind_rows(pbp_plus) %>%
+    bind_rows(pbp_minus) %>%
+    left_join(roster, by = "Player") %>%
     rename(Team = abbrev) %>%
-    select(-contains("."), -event_team, -roster_id) %>%
+    select(-event_team) %>%
     filter(!is.na(Player))
   
-  player_data <- player_data[which(apply(player_data[,c(4:27)], 1, function(x){sum(is.na(x))}) != 23),]
+  #player_data <- player_data[which(apply(player_data[,c(4:27)], 1, function(x){sum(is.na(x))}) != 23),]
   
   player_data <- player_data %>%
     group_by(position, Player, Team) %>%
@@ -535,7 +535,7 @@ game_summary <- function(pbp_df){
   player_data$home_team <- home
   player_data$away_team <- away
   
-  player_data[is.na(player_data)] <- 0
+  #player_data[is.na(player_data)] <- 0
   
   player_data <- mutate(player_data, 
                         GS = ifelse(position == "G",
@@ -547,7 +547,7 @@ game_summary <- function(pbp_df){
     rename(eGF = Plus, eGA = Minus)
   
   player_data <- select(player_data,
-                        game_id:away_team,Player,position,Team,
+                        Player,Team,position,game_id:away_team,
                         G,A1,A2,PTS,PrPTS,GS,SOG,eGF,eGA,GF.,PPG,PPA1,PPA2,SHG,SHA1,SHA2,FOW,FOL,PIM,Blk,TO,SV,GA)
   
   return(player_data)
@@ -570,7 +570,7 @@ compile_player_summary <- function(pbp_df){
 pbp_ids <- schedule_scrape(Season = "20172018")
 
 #Individual Games
-pbp_df <- complete_game_scrape(pbp_ids[2])
+pbp_df <- complete_game_scrape(18507534)
 pbp_gamesummary <- game_summary(pbp_df)
 
 #Multiple games
