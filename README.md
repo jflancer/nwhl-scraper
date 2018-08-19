@@ -33,3 +33,9 @@ nwhl_pbp_1718.csv
 -----------------
 
 If unable to run scraper and/or don't want to, this file has all of the 1718 season pbp data loaded.
+
+player_games1718.csv
+--------------------
+
+If unable to run scraper and/or don't want to, this file has all of the 1718 season player game totals.
+
