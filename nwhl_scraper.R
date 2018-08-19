@@ -6,15 +6,16 @@
 #Load Packages
 library(rjson)
 library(tidyverse)
-library(Rcrawler)
+library(stringr)
 
 #Season IDs
 seasons <- data.frame(id = c("407749","327125","327151"), 
-                      Season = c("20172018","20162017","20152016"))
+                      Season = c("20172018","20162017","20152016"),
+                      stringsAsFactors = F)
 
 #General Funcions----
 
-#Used to convert player ids to names
+#Used to convert player ids to names via Matt Barlowe
 convert_ids <- function(column, player_df){
   column <- player_df[match(column, player_df$id, nomatch = column),
                       c('Player')]
@@ -25,23 +26,37 @@ convert_numeric <- function(column){
   as.numeric(as.character(column))
 }
 
+# Shot Angle via Emmanuel Perry
+event_angle <- function(x, y) {
+  ## Description
+  # angle_from_centre() returns the angle from the central line perpendicular to the goal line in \
+  # degrees of a location corresponsing to a given set of coordinates
+  return(abs(atan(y/(89 - abs(x)))*(180/pi)))
+}
+distance_from_net <- function(x, y) {
+  ## Description
+  # distance_from_net() returns the distance from the nearest net in feet of a location corresponding \
+  # to a given set of coordinates
+  return(sqrt((89 - abs(x))^2 + y^2))
+}
+
 #Game Scrape Functions----
 
 #Formats roster as dataframe
-roster_info <- function(roster_json = NA, game_id = NA){
-  if(is.na(roster_json)) {
+roster_info <- function(game_id = NA, roster_json = NA){
+  if(!is.na(game_id)) {
     roster_json <- fromJSON(file =  paste("https://www.nwhl.zone/game/get_play_by_plays?id=", game_id, sep = ''))$roster_player
   }
   
   roster_data <- lapply(roster_json, unlist)
-  roster_data <- lapply(roster_data, FUN = function(x){ data.frame(t(x)) })
+  roster_data <- lapply(roster_data, FUN = function(x){ data.frame(t(x), stringsAsFactors = F) })
   roster_df <- do.call("bind_rows", roster_data)
   return(roster_df)
 }
 
 #Formats team info as dataframe
-team_info <- function(team_json = NA, gameid = NA){
-  if(is.na(team_json)) {
+team_info <- function(game_id = NA, team_json = NA){
+  if(!is.na(game_id)) {
     team_json <- fromJSON(file = paste("https://www.nwhl.zone/game/get_play_by_plays?id=", game_id, sep = ''))$team_instance
   }
   
@@ -49,23 +64,26 @@ team_info <- function(team_json = NA, gameid = NA){
   columns <- names(team_data[[1]])
   roster_df <- data.frame(matrix(unlist(team_data),
                                  byrow = T,
-                                 nrow = length(team_data)))
+                                 nrow = length(team_data)),
+                          stringsAsFactors = F)
   colnames(roster_df) <- columns
   return(roster_df)
 }
 
 #Formats game info as dataframe
-game_info <- function(game_json = NA, gameid = NA){
-  if(is.na(game_json)) {
+game_info <- function(game_id = NA, game_json = NA){
+  if(!is.na(game_id)) {
     game_json <- fromJSON(file = paste("https://www.nwhl.zone/game/get_play_by_plays?id=", game_id, sep = ''))$game
   }
   game_vect <- unlist(game_json)
-  game_df <- data.frame(t(game_vect))
+  game_df <- data.frame(t(game_vect), stringsAsFactors = F)
+  return(game_df)
 }
 
 #Scrapes game given id
 complete_game_scrape <- function(game_id){
-  
+  game_id <- as.character(game_id) #handle if user enters it as numeric
+  print(game_id)
   # Gets json file
   game_url <- paste("https://www.nwhl.zone/game/get_play_by_plays?id=", game_id, sep = '')
   pbp_json <- fromJSON(file = game_url)
@@ -94,7 +112,7 @@ complete_game_scrape <- function(game_id){
   
   #This essentially converts fromJSON list to a dataframe
   plays_reduced <- lapply(plays, unlist)
-  play_data <- lapply(plays_reduced, FUN = function(x){ data.frame(t(x)) })
+  play_data <- lapply(plays_reduced, FUN = function(x){ data.frame(t(x), stringsAsFactors = F) })
   play_uncleaned <- do.call("bind_rows", play_data)
   
   #This prepares everything
@@ -138,41 +156,41 @@ complete_game_scrape <- function(game_id){
            event_player_3 = play_summary.assist_2_id,
            #As of now the only detail is penalty info
            event_detail = ifelse(play_type == "Penalty",
-                                 paste(play_summary.penalty_type, play_summary.infraction_type, play_summary.penalty_minutes),
+                                 paste( play_summary.penalty_minutes, play_summary.infraction_type, play_summary.penalty_type),
                                  NA),
            #create background columns
            home_team = game_data$home_team, #these are currently ids
            away_team = game_data$away_team,
-           game_date = as.character(as.POSIXct(created_at, "%Y-%m-%d")),
-           game_seconds = 1200*(as.numeric(time_interval)-1) + ifelse(as.numeric(min) == 20,0,(19 - as.numeric(min))*60) + ifelse(as.numeric(sec) == 0, 0,60-as.numeric(sec)),
+           game_date = as.character(as.POSIXct(created_at)),
+           game_seconds = 1200*(convert_numeric(time_interval)-1) + (20-convert_numeric(min)) *60 -convert_numeric(sec),
            #same as before, this deals with columns not found
            minus_player_1 = ifelse(rep("play_actions.minus_player_1" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_1, NA),
-           plus_player_1 = ifelse(rep("play_actions.plus_player_1" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
-                                  play_uncleaned$play_actions.plus_player_1, NA),
            minus_player_2 = ifelse(rep("play_actions.minus_player_2" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_2, NA),
-           plus_player_2 = ifelse(rep("play_actions.plus_player_2" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
-                                  play_uncleaned$play_actions.plus_player_2, NA),
            minus_player_3 = ifelse(rep("play_actions.minus_player_3" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_3, NA),
-           plus_player_3 = ifelse(rep("play_actions.plus_player_3" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
-                                  play_uncleaned$play_actions.plus_player_3, NA),
            minus_player_4 = ifelse(rep("play_actions.minus_player_4" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_4, NA),
-           plus_player_4 = ifelse(rep("play_actions.plus_player_4" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
-                                  play_uncleaned$play_actions.plus_player_4, NA),
            minus_player_5 = ifelse(rep("play_actions.minus_player_5" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_5, NA),
-           plus_player_5 = ifelse(rep("play_actions.plus_player_5" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
-                                  play_uncleaned$play_actions.plus_player_5, NA),
            minus_player_6 = ifelse(rep("play_actions.minus_player_6" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                    play_uncleaned$play_actions.minus_player_6, NA),
+           plus_player_1 = ifelse(rep("play_actions.plus_player_1" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
+                                  play_uncleaned$play_actions.plus_player_1, NA),
+           plus_player_2 = ifelse(rep("play_actions.plus_player_2" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
+                                  play_uncleaned$play_actions.plus_player_2, NA),
+           plus_player_3 = ifelse(rep("play_actions.plus_player_3" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
+                                  play_uncleaned$play_actions.plus_player_3, NA),
+           plus_player_4 = ifelse(rep("play_actions.plus_player_4" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
+                                  play_uncleaned$play_actions.plus_player_4, NA),
+           plus_player_5 = ifelse(rep("play_actions.plus_player_5" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
+                                  play_uncleaned$play_actions.plus_player_5, NA),
            plus_player_6 = ifelse(rep("play_actions.plus_player_6" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
                                   play_uncleaned$play_actions.plus_player_6, NA)
            )  %>%
-    #Adds interval for events
-    arrange(game_seconds) %>%
+    #Adds interval for events, ensures shots before faceoffs
+    arrange(game_seconds, desc((play_type %in% c("Goal","Shot"))*1)) %>%
     mutate(event_interval = ifelse(!is.na(lag(game_seconds)), game_seconds - lag(game_seconds), 0)) %>%
     #Remove columns not needed any more
     select(-play_summary.loser_id, -play_summary.assist_1_id, -play_summary.goalie_id, -play_summary.served_by_id,
@@ -195,11 +213,28 @@ complete_game_scrape <- function(game_id){
            home_goalie = play_actions.home_team_goalie,
            penalty_length = play_summary.penalty_minutes
            ) %>%
+    #Added in coordinate cleaning
+    mutate(
+      #Converts to (-100,100), (-42.5,42.5) coordinate system
+      x_coord = convert_numeric(x_coord)*1.98 - 99,
+      y_coord = convert_numeric(y_coord)*0.85 - 42.5,
+      #Converts shots to proper side of ice (note blocked shots are oriented to which team took it)
+      x_coord_2 = ifelse(((event_team == home_team & x_coord > 0) | (event_team == away_team & x_coord < 0)) & event_type %in% c("Shot","Goal"), -x_coord,x_coord),
+      y_coord_2 = ifelse(((event_team == home_team & x_coord > 0) | (event_team == away_team & x_coord < 0)) & event_type %in% c("Shot","Goal"), -y_coord,y_coord),
+      x_coord_2 = ifelse(((event_team == home_team & x_coord < 0) | (event_team == away_team & x_coord > 0)) & event_type == "BlockedShot", -x_coord,x_coord),
+      y_coord_2 = ifelse(((event_team == home_team & x_coord < 0) | (event_team == away_team & x_coord > 0)) & event_type == "BlockedShot", -y_coord,y_coord),
+      #Pushes all events to one side of the ice
+      x_coord_1 = ifelse(x_coord < 0, - x_coord, x_coord),
+      y_coord_1 = ifelse(x_coord < 0, -y_coord, y_coord),
+      event_angle = event_angle(x_coord, y_coord),
+      event_distance = distance_from_net(x_coord, y_coord)
+    ) %>%
     #putting everything in a logical order
     select(Season, game_id, game_date, home_team, away_team,
            play_index, period, min, sec, game_seconds, event_interval,
            event_type, event_detail, x_coord, y_coord, event_team,
            event_player_1, event_player_2, event_player_3,
+           event_angle,event_distance,x_coord_2:y_coord_1,
            home_goalie, away_goalie, plus_player_1:plus_player_5,plus_player_6,
            minus_player_1:minus_player_5,minus_player_6,
            penalty_length
@@ -237,24 +272,24 @@ complete_game_scrape <- function(game_id){
                          FUN = function(x) {
       #Creates a -1 for duration of penalty and 0s surrounding it
       if(x[1] == 1 & x[2]+x[3]*60 < (max(play_prep$period)*1200-1)){
-          c( rep( 0, length( 0:x[2] ) + 1),
+          c( rep( 0, length( 0:x[2] )),
           rep( -1, x[3]*60),
           rep(0, length((x[2]+x[3]*60 + 1):(max(play_prep$period)*1200-1))) 
           )
         #Creates a -1 for duration of penalty and 0s before (for end of game penalties)
         } else if(x[1] == 1 & x[2]+x[3]*60 >= (max(play_prep$period)*1200-1)) {
-          c( rep( 0, length( 0:x[2] ) + 1),
+          c( rep( 0, length( 0:x[2] )),
              rep(-1, max(play_prep$period)*1200-1-x[2] )
           )
         #Creates a +1 from time power play goal is scored to end of penalty to handle skater coming back on
         } else if( x[1] == 2 & (x[2] %in% ifelse(!is.na(x[5]) & !is.na(x[6]) & x[2] != x[5], x[5]:(x[5]+x[6]*60),-1 )) ) {
-          c( rep( 0, length( 0:(x[2]) ) + 1),
+          c( rep( 0, length( 0:(x[2]) )),
             rep( 1, length( (x[2]+1):(x[6]*60-(x[2]-x[5])))),
             rep(0, length((x[6]*60-(x[2]-x[5])):(max(play_prep$period)*1200-1)))
           )
         # Creates all zeros if event doesnt effect strength
         } else {
-          rep(0, length(0:(max(play_prep$period)*1200)))
+          rep(0, length(0:(max(play_prep$period)*1200-1)))
         }
       })
   
@@ -278,21 +313,21 @@ complete_game_scrape <- function(game_id){
                         1,
                         FUN = function(x) {
                           if(x[1] == 1 & x[2]+x[3]*60 < (max(play_prep$period)*1200-1)){
-                            c( rep( 0, length( 0:x[2] ) + 1),
+                            c( rep( 0, length( 0:x[2] )),
                                rep( -1, x[3]*60),
                                rep(0, length((x[2]+x[3]*60 + 1):(max(play_prep$period)*1200-1))) 
                             )
                           } else if(x[1] == 1 & x[2]+x[3]*60 >= (max(play_prep$period)*1200-1)) {
-                            c( rep( 0, length( 0:x[2] ) + 1),
+                            c( rep( 0, length( 0:x[2] )),
                                rep(-1, max(play_prep$period)*1200-1-x[2] )
                             )
                           } else if( x[1] == 2 & x[2] %in% ifelse(!is.na(x[5]) & !is.na(x[6]) & x[2] != x[5], x[5]:(x[5]+x[6]*60),-1 ) ) {
-                            c( rep( 0, length( 0:(x[2]) )+1),
+                            c( rep( 0, length( 0:(x[2]) )),
                                rep( 1, length( (x[2]+1):(x[6]*60-(x[2]-x[5])))),
                                rep(0, length((x[6]*60-(x[2]-x[5])+1):(max(play_prep$period)*1200-1)))
                             )
                           } else {
-                            rep(0, length(0:(max(play_prep$period)*1200)))
+                            rep(0, length(0:(max(play_prep$period)*1200-1)))
                           }
                         })
   
@@ -302,9 +337,10 @@ complete_game_scrape <- function(game_id){
   
   #Adds skater strength to pbp data
   play_df <- play_prep %>%
-    left_join(data.frame(game_seconds = 0:(max(play_prep$period)*1200),
+    left_join(data.frame(game_seconds = 0:(max(play_prep$period)*1200-1),
               home_skaters = home_skaters,
-              away_skaters = away_skaters))
+              away_skaters = away_skaters),
+              by = "game_seconds")
 
   #deals with extra skater for pulled goalie
   play_df$home_skaters <- ifelse(play_df$home_goalie == "", play_df$home_skaters+1, play_df$home_skaters)
@@ -314,15 +350,18 @@ complete_game_scrape <- function(game_id){
   play_df$away_skaters <- ifelse(play_df$away_skaters < 3,3, play_df$away_skaters)
   
   #Converts player ids to player names
-  play_df[,17:33] <-
-    play_df[,17:33] %>% sapply(convert_ids, player_df = players)
+  play_df[,c(17:19,26:39)] <-
+    play_df[,c(17:19,26:39)] %>% sapply(convert_ids, player_df = players)
   
   #final sorting of columns and removing unnecessary rows
   play_df <- play_df %>%
     select(-penalty_length) %>%
-    select(game_id:away_team, home_score, away_score, play_index:away_skaters) %>%
+    select(game_id:away_team, home_score, away_score, play_index:event_type,
+           event_team:event_player_3, event_detail:y_coord,
+           home_skaters, away_skaters, event_angle:minus_player_6) %>%
     filter(event_type != '')
   
+  print("    Finished")
   return(play_df)
 }
 
@@ -369,29 +408,153 @@ schedule_scrape <- function(Season = "20172018", teams = NA){
   #Iterates through each team
   for(i in team_urls){
     #Pulls urls for each game
-    Rcrawler(i, urlregexfilter ="/game/show/", MaxDepth=1)
-    #Takes out game id
-    game_ids <- strsplit(INDEX$Url, split = "\\?|\\/")
-    game_ids <- lapply(game_ids, function(x){x[6]})
-    game_ids <- unlist(game_ids)
+    html <- paste(readLines(i), collapse="\n")
+    game_ids <- str_extract_all(html,"(?<=[/])\\d{8}(?=[?])")
     #adds to vector
-    all_games <- c(all_games,game_ids)
+    all_games <- c(all_games,game_ids[[1]])
   }
   #since duplicate games
   all_games <- unique(all_games)
-
-  # Rcrawler Creates dumb folders in working directory- this deletes them
-  deleted <- dir(pattern = "nwhl.zone")
-  unlink(deleted, recursive = T)
   
   return(all_games)
 }
 
-##############
-#RUNNING THE SCRAPER
 
-# Uncomment code to scrape entire season
-# I'd recommend saving the game ids as that takes a little longer to run
-#pbp_ids <- schedule_scrape(Season = "20172018")
-pbp_ids <- read_csv("/Users/Jake/Dropbox/nwhl/nwhl_gameids1718.csv")$x
-pbp_df <- compile_games(pbp_ids)
+#Player-Game Summary Function----
+game_summary <- function(pbp_df){
+  # Pass in play by play dataframe for individual game and returns player summaries for game
+  # Thanks to @EvolvingWild for providing their NHL game summary as a baseline 
+  game_id <- first(pbp_df$game_id)
+  print(game_id)
+  team_ids <- select(team_info(game_id = game_id), 
+                     roster_id, 
+                     abbrev)
+  
+  roster <- roster_info(game_id = game_id) %>%
+    filter(roster_type == "player" & status == "active") %>%
+    select(first_name, last_name, position, roster_id) %>%
+    mutate(Player = paste(first_name,last_name)) %>%
+    select(-first_name, -last_name) %>%
+    left_join(team_ids, by = c("roster_id"))
+  
+  pbp_player_1 <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_player_1, event_team) %>%
+    summarise(G = sum(event_type == "Goal"),
+              SOG = sum(event_type == "Shot"),
+              FOW = sum(event_type == "Faceoff"),
+              Blk = sum(event_type == "BlockedShot"),
+              TO = sum(event_type == "Turnover"),
+              PEN = sum(event_type == "Penalty"),
+              PIM = sum(convert_numeric(substr(event_detail,1,1)), na.rm = T),
+              PPG = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
+              SHG = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
+              ) %>%
+    rename(Player = event_player_1)
+  
+  pbp_player_2 <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
+    summarise(A1 = sum(event_type == "Goal"),
+              SV = sum(event_type == "Shot"),
+              FOL = sum(event_type == "Faceoff"),
+              PPA = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
+              SHA = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
+    ) %>%
+    rename(Player = event_player_2)
+  
+  pbp_player_3 <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_player_3, event_team) %>%
+    summarise(A2 = sum(event_type == "Goal")) %>%
+    rename(Player = event_player_3)
+  
+  pbp_h_goalie <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_team, home_goalie) %>%
+    summarise(GA = sum(event_type == "Goal" & event_team == away_team)) %>%
+    rename(Player = home_goalie) %>%
+    filter(away_team == event_team)
+  
+  pbp_a_goalie <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_team, away_goalie) %>%
+    summarise(GA = sum(event_type == "Goal" & event_team == home_team)) %>%
+    rename(Player = away_goalie) %>%
+    filter(home_team == event_team)
+  
+  pbp_plus <- data.frame(table(c(pbp_df$plus_player_1,
+                      pbp_df$plus_player_2,
+                      pbp_df$plus_player_3,
+                      pbp_df$plus_player_4,
+                      pbp_df$plus_player_5,
+                      pbp_df$plus_player_6)))
+  
+  pbp_minus <- data.frame(table(c(pbp_df$minus_player_1,
+                      pbp_df$minus_player_2,
+                      pbp_df$minus_player_3,
+                      pbp_df$minus_player_4,
+                      pbp_df$minus_player_5,
+                      pbp_df$minus_player_6)))
+  if(nrow(pbp_plus) != 0) {
+    colnames(pbp_plus) <- c("Player","Plus")
+    pbp_plus$Player <- as.character(pbp_plus$Player) #for someone reasons strings as factors wasnt working
+  } else {
+    pbp_plus <- data.frame(Player = NA_character_, Plus = NA_integer_)
+  }
+  if(nrow(pbp_minus) != 0) {
+    colnames(pbp_minus) <- c("Player", "Minus")
+    pbp_minus$Player <- as.character(pbp_minus$Player)
+  } else {
+    pbp_minus <- data.frame(Player = NA_character_, Minus = NA_integer_)
+  }
+  mergecols <- c(colnames(pbp_player_1)[1:6])
+  player_data <- roster %>%
+    full_join(pbp_player_1, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_player_2, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_player_3, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_h_goalie, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_a_goalie, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_plus, by = "Player", suffix = c("",".")) %>%
+    full_join(pbp_minus, by = "Player", suffix = c("",".")) %>%
+    mutate(GA = ifelse(!is.na(GA),GA,0) + ifelse(!is.na(GA.),GA.,0)) %>%
+    rename(Team = abbrev) %>%
+    select(-contains("."), -event_team, -roster_id) %>%
+    filter(!is.na(Player))
+    
+  player_data <- player_data[!apply(player_data[,4:25], 1, function(x){sum(is.na(x)) == 22}),]
+  player_data$game_id <- first(player_data$game_id)
+  player_data$game_date <- first(player_data$game_date)
+  player_data$home_team <- first(player_data$home_team)
+  player_data$away_team <- first(player_data$away_team)
+  
+  player_data[is.na(player_data)] <- 0
+  
+  player_data <- mutate(player_data, GS = ifelse(position == "G",
+                                            0.14*SV - GA,
+                                            G + 0.64*(A1+A2) + 0.11*SOG + 0.12*(FOW-FOL) - 0.17*(PIM/2)))
+  
+  player_data <- select(player_data,
+                        game_id:away_team,Player,position,Team,
+                        G,A1,A2,GS,SOG,Plus,Minus,PPG,PPA,SHG,SHA,FOW,FOL,PIM,Blk,TO,SV,GA)
+  
+  return(player_data)
+}
+
+#Compile game summaries into one data frame from larger pbp file
+compile_player_summary <- function(pbp_df){
+  player_games <- pbp_df %>%
+    group_by(game_id) %>%
+    do(game_summary(.))
+  return(player_games)
+}
+
+##############
+#RUNNING THE SCRAPER EXAMPLES
+
+# Get season ids
+pbp_ids <- schedule_scrape(Season = "20172018")
+
+#Individual Games
+pbp_df <- complete_game_scrape(pbp_ids[1])
+pbp_gamesummary <- game_summary(pbp_df)
+
+#Multiple games
+pbp_full <- compile_games(pbp_ids)
+#This takes about 45s-1min to run
+pbp_full_summary <- compile_player_summary(pbp_full)
