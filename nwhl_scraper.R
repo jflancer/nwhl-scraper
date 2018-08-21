@@ -460,10 +460,17 @@ game_summary <- function(pbp_df){
     group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
     summarise(A1 = sum(event_type == "Goal"),
               SV = sum(event_type == "Shot"),
-              FOL = sum(event_type == "Faceoff"),
               PPA1 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
               SHA1 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
     ) %>%
+    filter(!(A1 == 0 & SV == 0 & PPA1 == 0 & SHA1 == 0)) %>%
+    rename(Player = event_player_2)
+  
+  pbp_FOL <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
+    summarise(FOL = sum(event_type == "Faceoff")) %>%
+    filter(FOL > 0) %>%
+    mutate(event_team = ifelse(event_team == home_team, away_team,home_team)) %>%
     rename(Player = event_player_2)
   
   pbp_player_3 <- pbp_df %>%
@@ -485,49 +492,51 @@ game_summary <- function(pbp_df){
     summarise(GA = sum(event_type == "Goal" & event_team == home_team)) %>%
     rename(Player = away_goalie) %>%
     filter(home_team == event_team)
+
+  pbp_plus_1 <- pbp_df %>% select(event_team, plus_player_1) %>% rename(Player = plus_player_1)
+  pbp_plus_2 <- pbp_df %>% select(event_team, plus_player_2) %>% rename(Player = plus_player_2)
+  pbp_plus_3 <- pbp_df %>% select(event_team, plus_player_3) %>% rename(Player = plus_player_3)
+  pbp_plus_4 <- pbp_df %>% select(event_team, plus_player_4) %>% rename(Player = plus_player_4)
+  pbp_plus_5 <- pbp_df %>% select(event_team, plus_player_5) %>% rename(Player = plus_player_5)
+  pbp_plus_6 <- pbp_df %>% select(event_team, plus_player_6) %>% rename(Player = plus_player_6)
+  pbp_plus <- do.call("rbind",list(pbp_plus_1,pbp_plus_2,pbp_plus_3,pbp_plus_4,pbp_plus_5, pbp_plus_6)) %>%
+    group_by(event_team,Player) %>% 
+    summarise(Plus = n()) %>%
+    filter(!is.na(Player))
   
-  pbp_plus <- data.frame(table(c(pbp_df$plus_player_1,
-                      pbp_df$plus_player_2,
-                      pbp_df$plus_player_3,
-                      pbp_df$plus_player_4,
-                      pbp_df$plus_player_5,
-                      pbp_df$plus_player_6)))
-  
-  pbp_minus <- data.frame(table(c(pbp_df$minus_player_1,
-                      pbp_df$minus_player_2,
-                      pbp_df$minus_player_3,
-                      pbp_df$minus_player_4,
-                      pbp_df$minus_player_5,
-                      pbp_df$minus_player_6)))
-  if(nrow(pbp_plus) != 0) {
-    colnames(pbp_plus) <- c("Player","Plus")
-    pbp_plus$Player <- as.character(pbp_plus$Player) #for someone reasons strings as factors wasnt working
-  } else {
-    pbp_plus <- data.frame(Player = NA_character_, Plus = NA_integer_)
-  }
-  if(nrow(pbp_minus) != 0) {
-    colnames(pbp_minus) <- c("Player", "Minus")
-    pbp_minus$Player <- as.character(pbp_minus$Player)
-  } else {
-    pbp_minus <- data.frame(Player = NA_character_, Minus = NA_integer_)
-  }
+  pbp_minus_1 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_1) %>% rename(Player = minus_player_1)
+  pbp_minus_2 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_2) %>% rename(Player = minus_player_2)
+  pbp_minus_3 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_3) %>% rename(Player = minus_player_3)
+  pbp_minus_4 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_4) %>% rename(Player = minus_player_4)
+  pbp_minus_5 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_5) %>% rename(Player = minus_player_5)
+  pbp_minus_6 <- pbp_df %>% mutate(event_team = ifelse(event_team == home_team, away_team, home_team)) %>%
+    select(event_team, minus_player_6) %>% rename(Player = minus_player_6)
+  pbp_minus <- do.call("rbind",list(pbp_minus_1,pbp_minus_2,pbp_minus_3,pbp_minus_4,pbp_minus_5, pbp_minus_6)) %>%
+    group_by(event_team,Player) %>% 
+    summarise(Minus = n()) %>%
+    filter(!is.na(Player))
 
   player_data <- pbp_player_1 %>%
     bind_rows(pbp_player_2) %>%
     bind_rows(pbp_player_3) %>%
+    bind_rows(pbp_FOL) %>%
     bind_rows(pbp_h_goalie) %>%
     bind_rows(pbp_a_goalie) %>%
     bind_rows(pbp_plus) %>%
     bind_rows(pbp_minus) %>%
-    left_join(roster, by = "Player") %>%
-    rename(Team = abbrev) %>%
-    select(-event_team) %>%
+    left_join(roster, by = c("Player","event_team"="abbrev")) %>%
+    rename(Team = event_team) %>%
     filter(!is.na(Player))
   
   #player_data <- player_data[which(apply(player_data[,c(4:27)], 1, function(x){sum(is.na(x))}) != 23),]
   
   player_data <- player_data %>%
-    group_by(position, Player, Team) %>%
+    group_by(Player,Team,position) %>%
     summarise_if(is.numeric, sum, na.rm = T)
     
   player_data$game_id <- game_id
@@ -570,7 +579,7 @@ compile_player_summary <- function(pbp_df){
 pbp_ids <- schedule_scrape(Season = "20172018")
 
 #Individual Games
-pbp_df <- complete_game_scrape(18507534)
+pbp_df <- complete_game_scrape(18507456)
 pbp_gamesummary <- game_summary(pbp_df)
 
 #Multiple games
