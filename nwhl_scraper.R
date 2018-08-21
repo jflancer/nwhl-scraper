@@ -459,17 +459,17 @@ game_summary <- function(pbp_df){
   pbp_player_2 <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
     summarise(A1 = sum(event_type == "Goal"),
-              SV = sum(event_type == "Shot"),
               PPA1 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
               SHA1 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
     ) %>%
-    filter(!(A1 == 0 & SV == 0 & PPA1 == 0 & SHA1 == 0)) %>%
+    filter(!(A1 == 0 & PPA1 == 0 & SHA1 == 0)) %>%
     rename(Player = event_player_2)
   
-  pbp_FOL <- pbp_df %>%
+  pbp_player_flipped <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
-    summarise(FOL = sum(event_type == "Faceoff")) %>%
-    filter(FOL > 0) %>%
+    summarise(FOL = sum(event_type == "Faceoff"),
+              SV = sum(event_type == "Shot")) %>%
+    filter(FOL > 0 | SV > 0) %>%
     mutate(event_team = ifelse(event_team == home_team, away_team,home_team)) %>%
     rename(Player = event_player_2)
   
@@ -485,13 +485,17 @@ game_summary <- function(pbp_df){
     group_by(game_id, game_date, home_team, away_team, event_team, home_goalie) %>%
     summarise(GA = sum(event_type == "Goal" & event_team == away_team)) %>%
     rename(Player = home_goalie) %>%
-    filter(away_team == event_team)
+    ungroup() %>%
+    filter(away_team == event_team) %>%
+    mutate(event_team = home_team)
   
   pbp_a_goalie <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_team, away_goalie) %>%
     summarise(GA = sum(event_type == "Goal" & event_team == home_team)) %>%
-    rename(Player = away_goalie) %>%
-    filter(home_team == event_team)
+    ungroup() %>%
+    filter(home_team == event_team) %>%
+    mutate(event_team = away_team)
+  
 
   pbp_plus_1 <- pbp_df %>% select(event_team, plus_player_1) %>% rename(Player = plus_player_1)
   pbp_plus_2 <- pbp_df %>% select(event_team, plus_player_2) %>% rename(Player = plus_player_2)
@@ -524,7 +528,7 @@ game_summary <- function(pbp_df){
   player_data <- pbp_player_1 %>%
     bind_rows(pbp_player_2) %>%
     bind_rows(pbp_player_3) %>%
-    bind_rows(pbp_FOL) %>%
+    bind_rows(pbp_player_flipped) %>%
     bind_rows(pbp_h_goalie) %>%
     bind_rows(pbp_a_goalie) %>%
     bind_rows(pbp_plus) %>%
@@ -586,5 +590,6 @@ pbp_gamesummary <- game_summary(pbp_df)
 pbp_full <- compile_games(pbp_ids)
 #This takes about 45s-1min to run
 pbp_full_summary <- compile_player_summary(pbp_full)
+
 write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1718.csv")
 write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1718.csv")
