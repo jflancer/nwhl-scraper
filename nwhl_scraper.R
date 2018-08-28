@@ -115,6 +115,13 @@ complete_game_scrape <- function(game_id){
   play_data <- lapply(plays_reduced, FUN = function(x){ data.frame(t(x), stringsAsFactors = F) })
   play_uncleaned <- do.call("bind_rows", play_data)
   
+  if(!"play_summary.x_coord" %in% colnames(play_uncleaned)){
+    play_uncleaned$play_summary.x_coord <- NA
+    play_uncleaned$play_summary.y_coord <- NA
+    play_uncleaned$play_summary.loser_id <- NA
+    
+  }
+  
   #This prepares everything
   play_prep <- play_uncleaned %>%
     #Selects relevant columns
@@ -583,7 +590,7 @@ compile_player_summary <- function(pbp_df){
 pbp_ids <- schedule_scrape(Season = "20172018")
 
 #Individual Games
-pbp_df <- complete_game_scrape(18507456)
+pbp_df <- complete_game_scrape(14668259)
 pbp_gamesummary <- game_summary(pbp_df)
 
 #Multiple games
@@ -593,3 +600,11 @@ pbp_full_summary <- compile_player_summary(pbp_full)
 
 write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1718.csv")
 write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1718.csv")
+
+roster_data <- lapply(pbp_ids, roster_info)
+roster_data <- roster_data[which(!is.na(roster_data))]
+roster_data <- do.call("bind_rows", roster_data)
+roster_data <- roster_data %>%
+  filter(status == "active", roster_type == "player") %>%
+  distinct(id, .keep_all = T)
+write_csv(roster_data, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/rosterdata.csv")
