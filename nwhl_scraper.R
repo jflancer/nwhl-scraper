@@ -499,6 +499,7 @@ game_summary <- function(pbp_df){
   pbp_a_goalie <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_team, away_goalie) %>%
     summarise(GA = sum(event_type == "Goal" & event_team == home_team)) %>%
+    rename(Player = away_goalie) %>%
     ungroup() %>%
     filter(home_team == event_team) %>%
     mutate(event_team = away_team)
