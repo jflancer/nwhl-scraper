@@ -9,8 +9,9 @@ library(tidyverse)
 library(stringr)
 
 #Season IDs
-seasons <- data.frame(id = c("407749","327125","327151"), 
-                      Season = c("20172018","20162017","20152016"),
+seasons <- data.frame(id = c("512423","407749","327125","327151"), 
+                      Season = c("20182019","20172018","20162017","20152016"),
+                      League = c("71616","57888","46941","46947"),
                       stringsAsFactors = F)
 
 #General Funcions----
@@ -385,12 +386,11 @@ compile_games <- function(game_ids) {
 #Schedule Scrape Function----
 
 #Pass in season as 2yrs and teams as vector of team abbrev, default is all teams (ie league schedule)
-schedule_scrape <- function(Season = "20172018", teams = NA){
-  all_teams <- c("BOS", "BUF","CTW","MET")
-  if(is.na(teams)){
-    teams <- all_teams
-  }
+schedule_scrape <- function(Season = "20182019", teams = NA){
+  teams <- c("BOS", "BUF","CTW","MET", "MIN")
+  
   #team ids change every season lol
+  the1819ids <- c(4170045:4170048, 4170060)
   the1718ids <- 2840761:2840764
   the1617ids <- c(2150454, 2150455, 2150457, 2150459)
   the1516ids <- 2150711:2150714
@@ -400,15 +400,18 @@ schedule_scrape <- function(Season = "20172018", teams = NA){
     the1516ids[match(teams,all_teams)]
   } else if(Season == "20162017") {
     the1617ids[match(teams,all_teams)]
-  } else {
+  } else if(Season == "20172018"){
     the1718ids[match(teams,all_teams)]
+  } else{
+    the1819ids[match(teams,all_teams)]
   }
+  
   #Gets season id
   seasonid <- as.character(seasons$id[which(seasons$Season == Season)])
-
+  
   #Creates urls for each team schedule page
   team_urls <- paste("https://www.nwhl.zone/schedule/team_instance/",
-                     team_ids,
+                     team_ids[which(!is.na(team_ids))],
                      "?subseason=",
                      seasonid,
                      sep = "")
@@ -429,6 +432,47 @@ schedule_scrape <- function(Season = "20172018", teams = NA){
   return(all_games)
 }
 
+day_scrape <- function(Season = "20182019", Year = "2018", Month = "10", Day = "13"){
+  teams <- c("BOS", "BUF","CTW","MET", "MIN")
+
+  #team ids change every season lol
+  the1819ids <- c(4170045:4170048, 4170060)
+  the1718ids <- 2840761:2840764
+  the1617ids <- c(2150454, 2150455, 2150457, 2150459)
+  the1516ids <- 2150711:2150714
+  
+  #Gets relevant team ids
+  team_ids <- if(Season == "20152016") {
+    the1516ids[match(teams,all_teams)]
+  } else if(Season == "20162017") {
+    the1617ids[match(teams,all_teams)]
+  } else if(Season == "20172018"){
+    the1718ids[match(teams,all_teams)]
+  } else{
+    the1819ids[match(teams,all_teams)]
+  }
+  
+  #Gets season id
+  seasonid <- as.character(seasons$id[which(seasons$Season == Season)])
+  leagueid <- as.character(seasons$League[which(seasons$Season == Season)])
+  
+  # Gets daily schedule
+  url <- paste("https://www.nwhl.zone/schedule/day/league_instance/",
+      leagueid,
+      "/",
+      Year,
+      "/",
+      Month,
+      "/",
+      Day,
+      "?subseason=", seasonid, sep = "")
+  
+  #Iterates through each team
+  html <- paste(readLines(url), collapse="\n")
+  game_ids <- str_extract_all(html,"(?<=[/])\\d{8}(?=[?])")
+  
+  return(game_ids[[1]])
+}
 
 #Player-Game Summary Function----
 game_summary <- function(pbp_df){
