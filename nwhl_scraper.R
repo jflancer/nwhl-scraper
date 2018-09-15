@@ -1,7 +1,7 @@
 
 # NWHL GAME AND SCHEDULE SCRAPER
 # CREATED BY JAKE FLANCER
-# August 17, 2018
+# September 9th, 2018
 
 #Load Packages
 library(rjson)
@@ -119,7 +119,6 @@ complete_game_scrape <- function(game_id){
     play_uncleaned$play_summary.x_coord <- NA
     play_uncleaned$play_summary.y_coord <- NA
     play_uncleaned$play_summary.loser_id <- NA
-    
   }
   
   #This prepares everything
@@ -368,6 +367,10 @@ complete_game_scrape <- function(game_id){
            home_skaters, away_skaters, event_angle:minus_player_6) %>%
     filter(event_type != '')
   
+  #Deals with weird date issues
+  date <- play_df$game_date[1]
+  play_df$game_date <- date
+  
   print("    Finished")
   return(play_df)
 }
@@ -452,7 +455,7 @@ game_summary <- function(pbp_df){
   pbp_player_1 <- pbp_df %>%
     group_by(game_id, game_date, home_team, away_team, event_player_1, event_team) %>%
     summarise(G = sum(event_type == "Goal"),
-              SOG = sum(event_type == "Shot"),
+              SOG = sum(event_type == "Shot" | event_type == "Goal"),
               FOW = sum(event_type == "Faceoff"),
               Blk = sum(event_type == "BlockedShot"),
               TO = sum(event_type == "Turnover"),
@@ -574,7 +577,7 @@ game_summary <- function(pbp_df){
   return(player_data)
 }
 
-#Compile game summaries into one data frame from larger pbp file
+#Compile game summaries into one data frame from multi game pbp file
 compile_player_summary <- function(pbp_df){
   player_games <- pbp_df %>%
     ungroup() %>%
@@ -584,6 +587,92 @@ compile_player_summary <- function(pbp_df){
   return(player_games)
 }
 
+#Team- Game Summary Function----
+game_team_summary <- function(pbp_df){
+  game_id <- first(pbp_df$game_id)
+  date <- first(pbp_df$game_date)
+  home <- first(pbp_df$home_team)
+  away <- first(pbp_df$away_team)
+  
+  print(game_id)
+  
+  pbp_stats_home <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team) %>%
+    summarise(GF = sum(event_type == "Goal" & event_team == home_team),
+              GA = sum(event_type == "Goal" & event_team == away_team),
+              SF = sum(event_type == "Shot" & event_team == home_team),
+              SA = sum(event_type == "Shot" & event_team == away_team),
+              SF_5v5 = sum(event_type == "Shot" & event_team == home_team & home_skaters == 5 & 5 == away_skaters),
+              SA_5v5 = sum(event_type == "Shot" & event_team == away_team & home_skaters == 5 & 5 == away_skaters),
+              BlkF = sum(event_type == "BlockedShot" & event_team == home_team),
+              BlkA = sum(event_type == "BlockedShot" & event_team == away_team),
+              GF_5v5 = sum(event_type == "Goal" & event_team == home_team & home_skaters == 5 & 5 == away_skaters),
+              GA_5v5 = sum(event_type == "Goal" & event_team == away_team & home_skaters == 5 & 5 == away_skaters),
+              GF_pp = sum(event_type == "Goal" & event_team == home_team & home_skaters > away_skaters),
+              GA_pp = sum(event_type == "Goal" & event_team == away_team & home_skaters > away_skaters),
+              GF_sh = sum(event_type == "Goal" & event_team == home_team & home_skaters < away_skaters),
+              GA_sh = sum(event_type == "Goal" & event_team == away_team & home_skaters < away_skaters),
+              FOW = sum(event_type == "Faceoff" & event_team == home_team),
+              FOL = sum(event_type == "Faceoff" & event_team == away_team),
+              periods = max(period)
+    ) %>%
+    mutate('Sh' = round(GF/SF,2),
+           'Sv' = round(1 - GA/SA,2),
+           PDO = Sh + Sv,
+           SF. = round(SF/(SF+SA),2),
+           SF_5v5. = round(SF_5v5/(SF_5v5+SA_5v5),2),
+           Team = home_team) %>%
+    rename('Sh%' = Sh,
+           'Sv%' = Sv,
+           'SF%' = SF.,
+           'SF_5v5%' = SF_5v5.) %>%
+    select(game_id:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
+  
+  pbp_stats_away <- pbp_df %>%
+    group_by(game_id, game_date, home_team, away_team) %>%
+    summarise(GF = sum(event_type == "Goal" & event_team == away_team),
+              GA = sum(event_type == "Goal" & event_team == home_team),
+              SF = sum(event_type == "Shot" & event_team == away_team),
+              SA = sum(event_type == "Shot" & event_team == home_team),
+              SF_5v5 = sum(event_type == "Shot" & event_team == away_team & home_skaters == 5 & 5 == away_skaters),
+              SA_5v5 = sum(event_type == "Shot" & event_team == home_team & home_skaters == 5 & 5 == away_skaters),
+              BlkF = sum(event_type == "BlockedShot" & event_team == away_team),
+              BlkA = sum(event_type == "BlockedShot" & event_team == home_team),
+              GF_5v5 = sum(event_type == "Goal" & event_team == away_team & home_skaters == 5 & 5 == away_skaters),
+              GA_5v5 = sum(event_type == "Goal" & event_team == home_team & home_skaters == 5 & 5 == away_skaters),
+              GF_pp = sum(event_type == "Goal" & event_team == away_team & home_skaters > away_skaters),
+              GA_pp = sum(event_type == "Goal" & event_team == home_team & home_skaters > away_skaters),
+              GF_sh = sum(event_type == "Goal" & event_team == away_team & home_skaters < away_skaters),
+              GA_sh = sum(event_type == "Goal" & event_team == home_team & home_skaters < away_skaters),
+              FOW = sum(event_type == "Faceoff" & event_team == away_team),
+              FOL = sum(event_type == "Faceoff" & event_team == home_team),
+              periods = max(period)
+    ) %>%
+    mutate('Sh' = round(GF/SF,2),
+           'Sv' = round(1 - GA/SA,2),
+           PDO = Sh + Sv,
+           SF. = round(SF/(SF+SA),2),
+           SF_5v5. = round(SF_5v5/(SF_5v5+SA_5v5),2),
+           Team = away_team) %>%
+    rename('Sh%' = Sh,
+           'Sv%' = Sv,
+           'SF%' = SF.,
+           'SF_5v5%' = SF_5v5.) %>%
+    select(game_id:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
+  
+  pbp_team <- bind_rows(pbp_stats_home, pbp_stats_away)
+}
+
+# Compile team summaries into one data frame from multi game pbp file
+compile_team_summary <- function(pbp_df){
+  team_games <- pbp_df %>%
+    ungroup() %>%
+    mutate(game_id = as.character(game_id)) %>%
+    group_by(game_id) %>%
+    do(data.frame(game_team_summary(.)))
+  return(team_games)
+}
+
 ##############
 #RUNNING THE SCRAPER EXAMPLES
 
@@ -591,16 +680,19 @@ compile_player_summary <- function(pbp_df){
 pbp_ids <- schedule_scrape(Season = "20172018")
 
 #Individual Games
-pbp_df <- complete_game_scrape(14668259)
+pbp_df <- complete_game_scrape(18507502)
 pbp_gamesummary <- game_summary(pbp_df)
+pbp_teamsummary <- game_team_summary(pbp_df)
 
 #Multiple games
 pbp_full <- compile_games(pbp_ids)
 #This takes about 45s-1min to run
 pbp_full_summary <- compile_player_summary(pbp_full)
+pbp_full_team_summary <- compile_team_summary(pbp_full)
 
 write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1718.csv")
 write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1718.csv")
+write_csv(pbp_full_team_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/teamgames1718.csv")
 
 roster_data <- lapply(pbp_ids, roster_info)
 roster_data <- roster_data[which(!is.na(roster_data))]
