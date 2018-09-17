@@ -1,7 +1,6 @@
-
 # NWHL GAME AND SCHEDULE SCRAPER
 # CREATED BY JAKE FLANCER
-# September 9th, 2018
+# September 17th, 2018
 
 #Load Packages
 library(rjson)
@@ -386,11 +385,18 @@ compile_games <- function(game_ids) {
 #Schedule Scrape Function----
 
 #Pass in season as 2yrs and teams as vector of team abbrev, default is all teams (ie league schedule)
-schedule_scrape <- function(Season = "20182019", teams = NA){
-  teams <- c("BOS", "BUF","CTW","MET", "MIN")
+schedule_scrape <- function(Season = NA, teams = NA){
+  all_teams <- c("BOS", "BUF","CTW","MET", "MIN")
+  if(is.na(teams)){
+    teams <- all_teams
+  }
+  if(is.na(Season)){
+    print("Please Enter Season")
+    return(NA)
+  }
   
   #team ids change every season lol
-  the1819ids <- c(4170045:4170048, 4170060)
+  the1819ids <- c(3629910:3629913, 3629918)
   the1718ids <- 2840761:2840764
   the1617ids <- c(2150454, 2150455, 2150457, 2150459)
   the1516ids <- 2150711:2150714
@@ -432,26 +438,10 @@ schedule_scrape <- function(Season = "20182019", teams = NA){
   return(all_games)
 }
 
-day_scrape <- function(Season = "20182019", Year = "2018", Month = "10", Day = "13"){
-  teams <- c("BOS", "BUF","CTW","MET", "MIN")
-
-  #team ids change every season lol
-  the1819ids <- c(4170045:4170048, 4170060)
-  the1718ids <- 2840761:2840764
-  the1617ids <- c(2150454, 2150455, 2150457, 2150459)
-  the1516ids <- 2150711:2150714
-  
-  #Gets relevant team ids
-  team_ids <- if(Season == "20152016") {
-    the1516ids[match(teams,all_teams)]
-  } else if(Season == "20162017") {
-    the1617ids[match(teams,all_teams)]
-  } else if(Season == "20172018"){
-    the1718ids[match(teams,all_teams)]
-  } else{
-    the1819ids[match(teams,all_teams)]
-  }
-  
+# Gets all game ids for a given date
+# Season in format year 1 (yyyy) year 2 (yyyy)
+# Date as Year = yyyy, Month = mm, Day = dd
+day_scrape <- function(Season = NA, Year = NA, Month = NA, Day = NA){
   #Gets season id
   seasonid <- as.character(seasons$id[which(seasons$Season == Season)])
   leagueid <- as.character(seasons$League[which(seasons$Season == Season)])
