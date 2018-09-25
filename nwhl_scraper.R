@@ -167,7 +167,7 @@ complete_game_scrape <- function(game_id){
            #create background columns
            home_team = game_data$home_team, #these are currently ids
            away_team = game_data$away_team,
-           game_date = as.character(as.POSIXct(created_at)),
+           game_date = created_at,
            game_seconds = 1200*(convert_numeric(time_interval)-1) + (20-convert_numeric(min)) *60 -convert_numeric(sec),
            #same as before, this deals with columns not found
            minus_player_1 = ifelse(rep("play_actions.minus_player_1" %in% colnames(play_uncleaned), nrow(play_uncleaned)),
@@ -244,8 +244,23 @@ complete_game_scrape <- function(game_id){
            home_goalie, away_goalie, plus_player_1:plus_player_5,plus_player_6,
            minus_player_1:minus_player_5,minus_player_6,
            penalty_length
-           )
+           ) %>%
+    mutate(Season = substr(Season,1,4))
     
+  #Added 9/19/18 by Carleen Markey
+  #Converts source date in GMT into home team time zone then updates game_date colum with converted time
+  #Set tz = to neame for the home team time zone in the local OS, ie. tz = "America/Indianapolis" each system is different
+  if(any(play_prep$home_team == "MIN")) {
+    play_prep$game_date <- as.POSIXct(as.integer(play_uncleaned$created_at_integer), origin = "1970-01-01", tz= "America/Chicago")
+    play_prep$game_date <- as.character(play_prep$game_date)
+    play_prep$game_date <- gsub(" .*","", play_prep$game_date)
+  } else {
+    play_prep$game_date <- as.POSIXct(as.integer(play_uncleaned$created_at_integer), origin = "1970-01-01", tz= "America/Indianapolis")
+    play_prep$game_date <- as.character(play_prep$game_date)
+    play_prep$game_date <- gsub(" .*","", play_prep$game_date)
+  }
+  
+  
   #Create Score Columns
   play_prep$home_score <- 0
   play_prep$away_score <- 0
@@ -362,7 +377,7 @@ complete_game_scrape <- function(game_id){
   #final sorting of columns and removing unnecessary rows
   play_df <- play_df %>%
     select(-penalty_length) %>%
-    select(game_id:away_team, home_score, away_score, play_index:event_type,
+    select(Season, game_id:away_team, home_score, away_score, play_index:event_type,
            event_team:event_player_3, event_detail:y_coord,
            home_skaters, away_skaters, event_angle:minus_player_6) %>%
     filter(event_type != '')
@@ -468,6 +483,7 @@ day_scrape <- function(Season = NA, Year = NA, Month = NA, Day = NA){
 game_summary <- function(pbp_df){
   # Pass in play by play dataframe for individual game and returns player summaries for game
   # Thanks to @EvolvingWild for providing their NHL game summary as a baseline 
+  season <- first(pbp_df$Season)
   game_id <- first(pbp_df$game_id)
   date <- first(pbp_df$game_date)
   home <- first(pbp_df$home_team)
@@ -487,7 +503,7 @@ game_summary <- function(pbp_df){
     select(-roster_id)
   
   pbp_player_1 <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_player_1, event_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_player_1, event_team) %>%
     summarise(G = sum(event_type == "Goal"),
               SOG = sum(event_type == "Shot" | event_type == "Goal"),
               FOW = sum(event_type == "Faceoff"),
@@ -501,7 +517,7 @@ game_summary <- function(pbp_df){
     rename(Player = event_player_1)
   
   pbp_player_2 <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
     summarise(A1 = sum(event_type == "Goal"),
               PPA1 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
               SHA1 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
@@ -510,7 +526,7 @@ game_summary <- function(pbp_df){
     rename(Player = event_player_2)
   
   pbp_player_flipped <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_player_2, event_team) %>%
     summarise(FOL = sum(event_type == "Faceoff"),
               SV = sum(event_type == "Shot")) %>%
     filter(FOL > 0 | SV > 0) %>%
@@ -518,7 +534,7 @@ game_summary <- function(pbp_df){
     rename(Player = event_player_2)
   
   pbp_player_3 <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_player_3, event_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_player_3, event_team) %>%
     summarise(A2 = sum(event_type == "Goal"),
               PPA2 = sum(event_type == "Goal" & ((event_team == home_team & away_skaters < 5) | (event_team == away_team & home_skaters < 5))),
               SHA2 = sum(event_type == "Goal" & ((event_team == home_team & home_skaters < 5) | (event_team == away_team & away_skaters < 5)))
@@ -526,7 +542,7 @@ game_summary <- function(pbp_df){
     rename(Player = event_player_3)
   
   pbp_h_goalie <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_team, home_goalie) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_team, home_goalie) %>%
     summarise(GA = sum(event_type == "Goal" & event_team == away_team)) %>%
     rename(Player = home_goalie) %>%
     ungroup() %>%
@@ -534,7 +550,7 @@ game_summary <- function(pbp_df){
     mutate(event_team = home_team)
   
   pbp_a_goalie <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team, event_team, away_goalie) %>%
+    group_by(Season, game_id, game_date, home_team, away_team, event_team, away_goalie) %>%
     summarise(GA = sum(event_type == "Goal" & event_team == home_team)) %>%
     rename(Player = away_goalie) %>%
     ungroup() %>%
@@ -585,9 +601,10 @@ game_summary <- function(pbp_df){
   #player_data <- player_data[which(apply(player_data[,c(4:27)], 1, function(x){sum(is.na(x))}) != 23),]
   
   player_data <- player_data %>%
-    group_by(Player,Team,position) %>%
+    group_by(Season, Player,Team, position) %>%
     summarise_if(is.numeric, sum, na.rm = T)
     
+  player_data$Season <- season
   player_data$game_id <- game_id
   player_data$game_date <- date
   player_data$home_team <- home
@@ -605,7 +622,7 @@ game_summary <- function(pbp_df){
     rename(eGF = Plus, eGA = Minus)
   
   player_data <- select(player_data,
-                        Player,Team,position,game_id:away_team,
+                        Season, Player,Team,position,game_id:away_team,
                         G,A1,A2,PTS,PrPTS,GS,SOG,eGF,eGA,GF.,PPG,PPA1,PPA2,SHG,SHA1,SHA2,FOW,FOL,PIM,Blk,TO,SV,GA)
   
   return(player_data)
@@ -623,6 +640,7 @@ compile_player_summary <- function(pbp_df){
 
 #Team- Game Summary Function----
 game_team_summary <- function(pbp_df){
+  season <- first(pbp_df$Season)
   game_id <- first(pbp_df$game_id)
   date <- first(pbp_df$game_date)
   home <- first(pbp_df$home_team)
@@ -631,7 +649,7 @@ game_team_summary <- function(pbp_df){
   print(game_id)
   
   pbp_stats_home <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team) %>%
     summarise(GF = sum(event_type == "Goal" & event_team == home_team),
               GA = sum(event_type == "Goal" & event_team == away_team),
               SF = sum(event_type == "Shot" & event_team == home_team),
@@ -660,10 +678,10 @@ game_team_summary <- function(pbp_df){
            'Sv%' = Sv,
            'SF%' = SF.,
            'SF_5v5%' = SF_5v5.) %>%
-    select(game_id:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
+    select(Season:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
   
   pbp_stats_away <- pbp_df %>%
-    group_by(game_id, game_date, home_team, away_team) %>%
+    group_by(Season, game_id, game_date, home_team, away_team) %>%
     summarise(GF = sum(event_type == "Goal" & event_team == away_team),
               GA = sum(event_type == "Goal" & event_team == home_team),
               SF = sum(event_type == "Shot" & event_team == away_team),
@@ -692,7 +710,7 @@ game_team_summary <- function(pbp_df){
            'Sv%' = Sv,
            'SF%' = SF.,
            'SF_5v5%' = SF_5v5.) %>%
-    select(game_id:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
+    select(Season:away_team, Team, GF:SA, 'SF%', SF_5v5, SA_5v5, 'SF_5v5%', BlkF:PDO)
   
   pbp_team <- bind_rows(pbp_stats_home, pbp_stats_away)
 }
@@ -711,7 +729,7 @@ compile_team_summary <- function(pbp_df){
 #RUNNING THE SCRAPER EXAMPLES
 
 # Get season ids
-pbp_ids <- schedule_scrape(Season = "20172018")
+pbp_ids <- schedule_scrape(Season = "20152016")
 
 #Individual Games
 pbp_df <- complete_game_scrape(18507502)
@@ -724,14 +742,14 @@ pbp_full <- compile_games(pbp_ids)
 pbp_full_summary <- compile_player_summary(pbp_full)
 pbp_full_team_summary <- compile_team_summary(pbp_full)
 
-write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1718.csv")
-write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1718.csv")
-write_csv(pbp_full_team_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/teamgames1718.csv")
+write_csv(pbp_full, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/nwhl_pbp_1516.csv")
+write_csv(pbp_full_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/playergames1516.csv")
+write_csv(pbp_full_team_summary, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/teamgames1516.csv")
 
-roster_data <- lapply(pbp_ids, roster_info)
-roster_data <- roster_data[which(!is.na(roster_data))]
-roster_data <- do.call("bind_rows", roster_data)
-roster_data <- roster_data %>%
-  filter(status == "active", roster_type == "player") %>%
-  distinct(id, .keep_all = T)
-write_csv(roster_data, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/rosterdata.csv")
+# roster_data <- lapply(pbp_ids, roster_info)
+# roster_data <- roster_data[which(!is.na(roster_data))]
+# roster_data <- do.call("bind_rows", roster_data)
+# roster_data <- roster_data %>%
+#   filter(status == "active", roster_type == "player") %>%
+#   distinct(id, .keep_all = T)
+# write_csv(roster_data, "/Users/Jake/Dropbox/nwhl/nwhl_site/data/rosterdata.csv")
