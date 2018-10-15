@@ -2,7 +2,7 @@
 Scrape NWHL Schedule and Play by Play Data in R
 This is not a finished product and I'd appreciate any feedback/pull requests/suggestion/etc. I can be reached on twitter @jakef1873. If you'd like to scrape nwhl data using python I'd strongly recommend checking out https://github.com/mcbarlowe/nwhl_scraper.
 
-
+Note: I've made quite a few changes since this was written and have not updated the list of all components to this project.
 
 nwhl_scraper.R 
 ---------------
